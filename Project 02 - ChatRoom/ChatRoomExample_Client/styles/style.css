@@ -1,0 +1,24 @@
+.rightButton {
+    float: right;
+    margin: 3px;
+    padding: 3px;
+}
+
+.leftButton {
+    float: left;
+    margin: 3px;
+    padding: 3px;
+}
+
+.bg-blue {
+    background-color:aliceblue;
+}
+
+.bg-gray {
+    background-color: rgb(216, 216, 209);
+}
+
+input{
+    margin: 5px;
+    padding: 1px;
+}

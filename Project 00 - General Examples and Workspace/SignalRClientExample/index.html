@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/messagehub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            //fade'i fonksiyon haline getirelim ki koddan tasarruf sağlansın.
+            function animation(){
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            }
+
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+
+                let connectionIds = $("#connectionIds").val().split(",");
+                let groups = $("#txtGroups").val().split(",");
+
+                // connection.invoke("SendMessageAsync", message, connectionIds).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+                connection.invoke("SendMessageAsync", message, groups[0]).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+            });
+
+            let _connectionId = "";
+            connection.on("getConnectionId", connectionId =>{
+                _connectionId = connectionId;
+                $("#connectionId").html(`Connection ID: ${connectionId}`)
+            })
+
+            $("#btnGrubaGir").click(() => {
+                let groupName = $("input[name=grup]:checked").val();
+                connection.invoke("addGroup", _connectionId, groupName).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            
+            })
+
+        });
+    </script>
+</head>
+<body>
+
+    <div style="background-color: black; color: white;" id="connectionId"></div>
+    <br>
+    <input type="radio" name="grup" value="A"> A
+    <input type="radio" name="grup" value="B"> B
+    <input type="radio" name="grup" value="C"> C
+    <button id="btnGrubaGir">Gruba Gir</button>
+    <br>
+    <input type="text" id="txtMessage" placeholder="Mesaj"> <br>
+    <input type="text" id="txtGroups" placeholder="Groups">
+
+    <br>
+    <textarea placeholder="Connection id" id="connectionIds" cols="30" rows="10"></textarea>
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+
+</body>
+</html>

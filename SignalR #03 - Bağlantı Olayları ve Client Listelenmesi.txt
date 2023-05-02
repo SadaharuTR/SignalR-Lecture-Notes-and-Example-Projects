@@ -1,0 +1,357 @@
+Bağlantı olayları SignalR kütüphanesinde server kanadında kullandığımız bir fonksiyonel yapılanmadır.
+
+Sisteme-uygulamaya client'lar tarafından bağlantı söz konusu olduğunda belirli fonksiyonlar devreye girer-eventler, bu eventler aracılığıyla biz sistemi belirli amaçlar doğrultusunda çalıştırabiliyoruz.
+Client'ları uyarma ya da loglama mekanizmalarını devreye sokabiliriz.
+
+İşte bu olaylara bağlantı olayları deriz.
+
+- Sisteme-Hub'a bir client dahil olduğunda OnConnectedAsync() eventi-olayı tetiklenir.
+
+- Bağlantısını koparan bir client söz konusu ise OnDisconnectedAsync() event-olayı tetiklenir.
+
+Bu iki fonksiyon sayesinde sistemde kimlerin dahil olduğunu kimlerin çıktığını, mevcut kullanıcıları vs. öğrenebilmekteyiz.
+
+Bunun için Hub sınıfından faydalanacağız. Base class olarak kullanıldığından dolayı kendi içerisinde 
+virtual olarak tanımlanan OnConnectedAsync() ve OnDisconnectedAsync() fonksiyonları override etmemize müsade edecektir.
+
+---
+
+OnConnectedAsync() ve OnDisconnectedAsync() Fonksiyonlarının Override Edilmesi
+
+MyHub.cs'de;
+
+using Microsoft.AspNetCore.SignalR;
+using System;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MyHub : Hub
+    {        
+        public async Task SendMessageAsync(string message)         
+        {           
+            await Clients.All.SendAsync("receiveMessage", message);
+        }
+
+        //Sisteme bağlantı gerçekleştiğinde burası;
+        public override Task OnConnectedAsync()
+        {
+            return base.OnConnectedAsync();
+        }
+        //bağlantı koptuğunda da burası tetiklenecektir.
+        public override Task OnDisconnectedAsync(Exception exception)
+        {
+            return base.OnDisconnectedAsync(exception);
+        }
+    }
+}
+
+Bağlantı olayları SignalR uygulamalarında loglama için oldukça elverişlidir.
+
+Sisteme herhangi bir client bağlantı sağladığı zaman, eğer ki client html bazlı bir client ise  sayfayı yenilemek demek önce bağlantıyı koparmak sonra yenilemek demektir.
+
+---
+
+ConnectionId Nedir?
+
+- Hub'a bağlantı gerçekleştiren client'lara sistem tarafından verilen, unique/tekil bir değerdir.
+Amacı, client'ları birbirinden ayırmaktır.
+
+Sistemdeki client'lara, giren-çıkan client'ların bilgisini verebilecek bir çalışma yapalım.
+
+MyHub.cs'de Server tarafındaki işlemleri tamamlayıp;
+
+using Microsoft.AspNetCore.SignalR;
+using System;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MyHub : Hub
+    {
+        public async Task SendMessageAsync(string message)         
+        {
+            //Client'da receiveMessage isimli bir fonksiyon bekleniyor, o fonksiyonu tetikle, bunu //yaparken diğer client'ın gönderdiği yani buraya gelen mesajı message ile bu client'a //gönder.
+            await Clients.All.SendAsync("receiveMessage", message);
+        }
+
+        //Sisteme bağlantı gerçekleştiğinde burası;
+        public override async Task OnConnectedAsync()
+        {
+            //Kullanıcı-user join olduğu zaman client'lardaki userJoined fonksiyonunu tetikle ve
+            //giriş yapan kullanıcının ConnectionId değerini client'lara gönder.
+
+            await Clients.All.SendAsync("userJoined", Context.ConnectionId);
+        }
+        //bağlantı koptuğunda da burası tetiklenecektir.
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {
+            //Kullanıcı-user disconnect olduğu zaman client'lardaki userLeaved fonksiyonunu tetikle ve
+            //çıkış yapan kullanıcının ConnectionId değerini client'lara gönder.
+            await Clients.All.SendAsync("userLeaved", Context.ConnectionId);
+        }
+    }
+}
+
+Daha sonra Visual Studio Code'da index.html'de bu yukarıda belirttiğimiz tetiklenecek fonksiyonları tanımlamamız lazım.
+
+index.html;
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/myhub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            //fade'i fonksiyon haline getirelim ki koddan tasarruf sağlansın.
+            function animation(){
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            }
+
+            const durum = $("#durum")
+            //error parametresi süreçte hata olursa döndürmesi içindir.
+            connection.onreconnecting(error => {
+                durum.css("background-color", "blue")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruluyor...")
+                animation()
+            });
+            //Client'lar ilgili hub'a bağlandığında client'ların birbirlerinden ayrılabilmesi için
+            //connectionId atanmaktadır. (ileride detaylı)
+            connection.onreconnected(connectionId => {
+                durum.css("background-color", "green")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruldu...")
+                animation()
+            });
+
+            connection.onclose(connectionId => {
+                durum.css("background-color", "red")
+                durum.css("color", "white")
+                durum.html("Bağlantı kurulamadı!")
+                animation()
+            });
+
+            connection.on("userJoined", connectionId => {
+                durum.html(`${connectionId} Connection Id'sine sahip Client bağlandı.`)
+                durum.css("background-color", "green")
+                animation()
+            })
+
+            connection.on("userLeaved", connectionId => {
+                durum.html(`${connectionId} Connection Id'sine sahip Client ayrıldı.`)
+                durum.css("background-color", "red")
+                animation()
+
+            })
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+                connection.invoke("SendMessageAsync", message).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+            });
+            
+        });
+    </script>
+</head>
+<body>
+
+    <div id="durum" style="display: none;"></div>
+
+    <input type="text" id="txtMessage">
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+</body>
+</html>
+
+---
+
+Bağlı Olan Tüm Client'ları Listeleme
+
+Bir koleksiyon ile bu işlemi gerçekleştirebiliriz.
+
+MyHub.cs'de;
+
+using Microsoft.AspNetCore.SignalR;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MyHub : Hub
+    {
+        static List<string>  clients = new List<string>();
+        
+        public async Task SendMessageAsync(string message)         
+        {
+            await Clients.All.SendAsync("receiveMessage", message);
+        }
+
+        //Sisteme bağlantı gerçekleştiğinde burası;
+        public override async Task OnConnectedAsync()
+        {            
+            clients.Add(Context.ConnectionId); //ekle ve
+            await Clients.All.SendAsync("clients", clients); //güncel halini client'lara gönder.
+			
+            await Clients.All.SendAsync("userJoined", Context.ConnectionId);
+        }
+        //bağlantı koptuğunda da burası tetiklenecektir.
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {            
+            clients.Remove(Context.ConnectionId); //sil ve
+            await Clients.All.SendAsync("clients", clients); //güncel halini client'lara gönder.
+            await Clients.All.SendAsync("userLeaved", Context.ConnectionId);
+        }
+    }
+}
+
+bu clients fonksiyonunu Client tarafında dinlememiz lazım.
+
+index.html'de;
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/myhub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            //fade'i fonksiyon haline getirelim ki koddan tasarruf sağlansın.
+            function animation(){
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            }
+
+            const durum = $("#durum")
+            //error parametresi süreçte hata olursa döndürmesi içindir.
+            connection.onreconnecting(error => {
+                durum.css("background-color", "blue")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruluyor...")
+                animation()
+            });
+            //Client'lar ilgili hub'a bağlandığında client'ların birbirlerinden ayrılabilmesi için
+            //connectionId atanmaktadır. (ileride detaylı)
+            connection.onreconnected(connectionId => {
+                durum.css("background-color", "green")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruldu...")
+                animation()
+            });
+
+            connection.onclose(connectionId => {
+                durum.css("background-color", "red")
+                durum.css("color", "white")
+                durum.html("Bağlantı kurulamadı!")
+                animation()
+            });
+
+            connection.on("userJoined", connectionId => {
+                durum.html(`${connectionId} Connection Id'sine sahip Client bağlandı.`)
+                durum.css("background-color", "green")
+                animation()
+            })
+
+            connection.on("userLeaved", connectionId => {
+                durum.html(`${connectionId} Connection Id'sine sahip Client ayrıldı.`)
+                durum.css("background-color", "red")
+                animation()
+            })
+
+            connection.on("clients", clientsData => {
+                let text = "";
+                $.each(clientsData, (index, item) => {
+                    text += `<li>${item}</li>`
+                    $("#clients").html(text);
+                })
+            })
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+                connection.invoke("SendMessageAsync", message).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+            });
+            
+        });
+    </script>
+</head>
+<body>
+
+    <div id="durum" style="display: none;"></div>
+
+    <input type="text" id="txtMessage">
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+
+    <!-- listeyi burada görelim. -->
+    <div>
+        <ul id="clients">
+
+        </ul>
+    </div>
+</body>
+</html>
+
+bu şekilde tüm client'ları listeleyebilmekteyiz.
+

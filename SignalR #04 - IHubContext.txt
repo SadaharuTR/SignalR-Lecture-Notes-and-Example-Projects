@@ -1,0 +1,221 @@
+IHubContext<T> interface'i, 'Hub' sınıflarının dışında SignalR mimarisini kullanmamızı ve böylece farklı bir sınıf yahut controller vs. gibi yapılar üzerinden client ile server arasında etkileşime girmemizi sağlayan bir soyutlamadır.
+
+Class Üzerinden Hub Dışı İLeti Gönderimi
+
+- Studio'da ana dizinde bir Business klasörü açalım ve içerisinde MyBusiness.cs oluşturalım.
+
+Örneğin MyHub'da tanımlamış olduğumuz SendMessageAsync()'in artık MyHub'da değil de MyBusiness.cs'de tanımlanmış olmasını isteyebiliriz.
+
+using Microsoft.AspNetCore.SignalR;
+using SignalRServerExample.Hubs;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Business
+{
+    public class MyBusiness
+    {
+        //bu referans sayesinde artık bu normal class'ta WebSocket işlemlerimizi gerçekleştirebileceğiz.
+        readonly IHubContext<MyHub> _hubContext;
+        //gelen nesneyi de aşağıdaki gibi injekte edebiliriz.
+        public MyBusiness(IHubContext<MyHub> hubContext) 
+        { 
+            _hubContext = hubContext; 
+        }
+        public async Task SendMessageAsync(string message)
+        {           
+            await _hubContext.Clients.All.SendAsync("receiveMessage", message);
+        }
+    }
+}
+
+Artık MyHub'a bağlı olan bütün client'lara MyBusiness üzerinden ilgili iletiyi receiveMessage fonksiyonu sayesinde iletebilmekteyiz.
+
+Artık bu MyBusiness class'ı Dependency Injection Provider'ına dahil edilebilir bir özellikte.
+Dahil edelim ki IHubContext interface'i Provider'dan buraya enjekte edilebilsin.
+
+Startup.cs'de;
+
+namespace SignalRServerExample
+{
+    public class Startup
+    {
+       
+        public void ConfigureServices(IServiceCollection services)
+        {           
+            services.AddCors(options => options.AddDefaultPolicy(policy =>
+                             policy.AllowAnyMethod()
+                                   .AllowAnyHeader()
+                                   .AllowCredentials()
+                                   .SetIsOriginAllowed(origin => true)
+            ));
+
+            /*
+			Artık mimari tarafından MyBusiness, ctor'unda enjekte edilen IHubContext .NET mimarisindeki SignalR kütüphanesinden alınacak ve nesnesi üretilip gönderilecektir. Yani bu sınıfı talep ettiğimiz noktalarda ilgili nesne gelmiş ve direkt WebSocket çalışmalarında dahil edilmiş olacaktır.
+			*/
+            services.AddTransient<MyBusiness>();
+
+            services.AddSignalR();
+        }
+		...
+		
+Örneğin bir controller üzerinde gelen istek neticesinde biz MyHub'a bağlı olan tüm Client'lara iletiler gönderebiliriz.
+
+using Microsoft.AspNetCore.Mvc;
+using SignalRServerExample.Business;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class HomeController : ControllerBase
+    {
+        //Öncelikli olarak MyBusiness'ı Dependency Injection ile talep etmeliyiz.
+        readonly MyBusiness _myBusiness;
+        public HomeController(MyBusiness myBusiness) //provider'dan gelen nesne,
+        {
+            _myBusiness = myBusiness; //referansa bağlanmış oldu.
+        }
+        //bu nesneyi artık istediğimiz herhangi bir action'da kullanabiliriz.
+        [HttpGet("{message}")]
+        public async Task<IActionResult>Index(string message)
+        {
+            await _myBusiness.SendMessageAsync(message);
+            return Ok();
+        }
+    }
+}
+
+Startup.cs'de bu controller'ı bildirmemiz lazım.
+
+namespace SignalRServerExample
+{
+    public class Startup
+    {
+       
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddCors(options => options.AddDefaultPolicy(policy =>
+                             policy.AllowAnyMethod()
+                                   .AllowAnyHeader()
+                                   .AllowCredentials()
+                                   .SetIsOriginAllowed(origin => true)
+            ));
+
+            services.AddTransient<MyBusiness>();
+
+            services.AddSignalR();
+			
+            services.AddControllers(); //burada ve
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+            app.UseCors(); //route'dan önce bir kontrol etsin.
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
+            {
+                //https://localhost:5001/myhub
+                endpoints.MapHub<MyHub>("/myhub");
+                endpoints.MapControllers(); //burada...
+            });
+        }
+    }
+}
+
+Postman'den https://localhost:5001/api/home/merhaba isteğinde bulunalım.
+
+Studio Code'da 3 adet Client'ı ayağa kaldıralım. (index.html'den)
+
+3 Client'ta da ekranda merhaba yazdığını görürüz.
+
+Gelen istek Index() tarafından karşılandı. Karşılanan bu istek neticesinde MyBusiness'taki SendMessageAsync() fonksiyonu tetikleniyor. Bu fonksiyon özünde MyHub'ı referans eden IHubContext
+referansını barındırır. Biz dolaylı yoldan MyBusiness class'ı üzerinde Hub'ımız olan MyHub sınıfını 
+baz alarak WebSocket çalışmalarını gerçekleştirmiş oluyoruz.
+
+Böylece WebSocket çalışmalarını Business Logic'e dahil etmiş oluyoruz.
+
+---
+
+Controller Üzerinde Hub Dışı İleti Gönderimi 
+
+- Direkt controller'da gelen request neticesinde WebSocket'a bağlı olan client'lara mesaj göndereceksek ve ekstradan bir işlem yapmayacaksak, bunun için harici bir sınıfla çalışmamıza gerek yoktur.
+
+Direkt controller'larda da IHubContext interface'i referansı üzerinden çalışabiliriz.
+
+HomeController.cs'de;
+
+namespace SignalRServerExample.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class HomeController : ControllerBase
+    {
+        readonly MyBusiness _myBusiness;
+        readonly IHubContext<MyHub> _hubContext;
+        public HomeController(MyBusiness myBusiness, IHubContext<MyHub> hubContext) 
+        {
+            _myBusiness = myBusiness; 
+            _hubContext = hubContext;
+        }
+		...
+	
+---
+
+Strongly Typed Hubs
+
+- Yazılım uygulamalarında sistemler arası haberleşmeleri yahut ortak tanımlamaları statik metinsel değerler üzerinden sağlamaya çalışmak, hata yapma ihtimalini arttırmakta ve böylece sürece ister istemez ekstra bir zorluk kazandırılmaktadır. Bu durum SignalR mimarisinde oldukça karşılaşılmakta ve server’ın client’ta ki herhangi bir metodu tetikleyebilmesi için genellikle aşağıdakine benzer geliştirilen kodlarda, tanımlanan metinsel değerler yer yer yanlış yazılabilmekte, karıştırılabilmekte yahut unutulabilmektedir.
+
+- Strongly Typed Hubs özelliği ile türü kesin belirlenmiş hub’lar tanımlayarak, metinsel yapılanmanın yarattığı handikaplardan bir nebze olsun arınabilmeyi ve client’ta tetiklenecek olan metot bildiriminin server’da derleme zamanındaki denetimini etkinleştirmeyi sağlayabiliriz. Bunun için bir interface aracılığıyla client’ta tetiklenecek olan metotların imzalarının modellenmesi ve ilgili Hub’a bildirilmesi yeterlidir.
+
+Projede ana dizinde Interfaces klasörü açalım. İçerisine;
+
+IMessageClient.cs;
+
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Interfaces
+{
+    public interface IMessageClient
+    {
+        Task Clients(List<string> clients);
+        Task UserJoined(string connectionId);
+        Task UserLeaved(string connectionId);
+
+    }
+}
+
+Bunları hub'da kullanmamız yeterli olacaktır.
+
+namespace SignalRServerExample.Hubs
+{
+    public class MyHub : Hub<IMessageClient> //generic olarak bildirelim.
+    {     
+        public override async Task OnConnectedAsync()
+        {
+            
+            clients.Add(Context.ConnectionId); 
+            //await Clients.All.SendAsync("clients", clients); //artık bu değil,
+            await Clients.All.Clients(clients); //bu
+            //await Clients.All.SendAsync("userJoined", Context.ConnectionId); //değil..
+            await Clients.All.UserJoined(Context.ConnectionId); //bu kullanılacak.
+        }
+        //bağlantı koptuğunda da burası tetiklenecektir.
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {
+            
+            clients.Remove(Context.ConnectionId);
+            //await Clients.All.SendAsync("clients", clients); 
+            await Clients.All.Clients(clients); //aynı şekilde..
+            //await Clients.All.SendAsync("userLeaved", Context.ConnectionId);
+            await Clients.All.UserLeaved(Context.ConnectionId);
+
+        }
+    }
+}

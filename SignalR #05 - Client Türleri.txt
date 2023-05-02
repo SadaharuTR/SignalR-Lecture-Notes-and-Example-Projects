@@ -1,0 +1,304 @@
+Client Türleri
+
+Yeni bir MessageHub.cs oluşturalım.
+
+using Microsoft.AspNetCore.SignalR;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MessageHub : Hub
+    {
+        public async Task SendMessageAsync(string message)
+        {
+            #region Caller
+            //Sadece  server'a bildirim gönderen client'la iletişim kurar.
+            //await Clients.Caller.SendAsync("receiveMessage" ,message);
+            #endregion
+            #region All
+            //Server'a bağlı olan bütün client'larla iletişim kurar.
+            //await Clients.All.SendAsync("receiveMessage", message);
+            #endregion
+            #region Other
+            //Sadece  server'a bildirim gönderen client dışında Server'a bağlı olan tüm client'lara mesaj gönderir.
+            await Clients.Others.SendAsync("receiveMessage", message);
+            #endregion
+        }
+    }
+}
+
+---
+
+Özelleştirilmiş Hub Metotları
+
+Bu metotlara geçmeden önce ConnectionId'yi almak için bir çalışma yapalım.
+
+using Microsoft.AspNetCore.SignalR;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MessageHub : Hub
+    {
+        public async Task SendMessageAsync(string message)
+        {...}
+            
+
+        //Tüm clientlar bağlantıyı sağladığı zaman her client kendisine ait connection id'yi kendi ekranında
+        //görebilsin istersek;
+
+        public override async Task OnConnectedAsync()
+        {
+            await Clients.Caller.SendAsync("getConnectionId", Context.ConnectionId);
+        }
+    }
+}
+
+ve index.html'de;
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/messagehub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            //fade'i fonksiyon haline getirelim ki koddan tasarruf sağlansın.
+            function animation(){
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            }
+
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+                connection.invoke("SendMessageAsync", message).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+            });
+            connection.on("getConnectionId", connectionId =>{
+                $("#connectionId").html(`Connection ID: ${connectionId}`)
+            })
+        });
+    </script>
+</head>
+<body>
+
+    <div style="background-color: black; color: white;" id="connectionId"></div>
+
+    <input type="text" id="txtMessage">
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+
+</body>
+</html>
+
+şeklinde bir div'de o anki client'ın Id'si sadece kendisine gözükecek şekilde bir çalışma yapabiliriz.
+
+---
+
+Hub Clients Metotları
+ 
+MessageHub.cs'de;
+
+using Microsoft.AspNetCore.SignalR;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace SignalRServerExample.Hubs
+{
+    public class MessageHub : Hub
+    {
+        //public async Task SendMessageAsync(string message, IEnumerable<string> connectionIds)
+        //public async Task SendMessageAsync(string message, string groupName, IEnumerable<string> connectionIds)
+        //public async Task SendMessageAsync(string message, IEnumerable<string> groups)
+        public async Task SendMessageAsync(string message, string groupName)
+        {
+            #region Caller
+            //Sadece  server'a bildirim gönderen client'la iletişim kurar.
+            //await Clients.Caller.SendAsync("receiveMessage" ,message);
+            #endregion
+            #region All
+            //Server'a bağlı olan bütün client'larla iletişim kurar.
+            //await Clients.All.SendAsync("receiveMessage", message);
+            #endregion
+            #region Other
+            //Sadece  server'a bildirim gönderen client dışında Server'a bağlı olan tüm client'lara mesaj gönderir.
+            //await Clients.Others.SendAsync("receiveMessage", message);
+            #endregion
+
+            #region Hub Clients Metotları
+            #region AllExcept
+            //Belirtilen client'lar hariç server'a bağlı olan tüm client'lara bildiride bulunur.
+            //await Clients.AllExcept(connectionIds).SendAsync("receiveMessage", message);
+            #endregion
+            #region Client
+            //Server'a bağlı olan client'lar arasından sadece belirli bir client'a bildiride bulunur.
+            //await Clients.Client(connectionIds.First()).SendAsync("receiveMessage", message);
+            #endregion
+            #region Clients
+            //Server'a bağlı olan clientlar arasından sadece belirtilenlere bildiride bulunur.
+            //await Clients.Clients(connectionIds).SendAsync("receiveMessage", message);
+            #endregion
+            #region Group
+            //Belirtilen gruptaki tüm client'lara bildiride bulunur.
+            //Önce gruplar oluşturulması ve ardından client'lar gruplara subscribe olmalı.
+            //await Clients.Group(groupName).SendAsync("receiveMessage", message);
+            #endregion
+            #region GroupExcept
+            //Belirtilen gruptaki belirtilen client'lar dışındaki tüm client'lara mesaj iletmemizi sağlayan
+            //bir fonksiyondur.
+            //await Clients.GroupExcept(groupName, connectionIds).SendAsync("receiveMessage", message);
+            #endregion
+            #region Groups
+            //Birden çok gruptaki client'lara bildiride bulunmamızı sağlayan fonksiyondur.
+            //await Clients.Groups(groups).SendAsync("receiveMessage", message);
+
+            #endregion
+            #region OthersInGroup
+            //Bildiride bulunan client haricinde gruptaki tüm clientlara bildiride bulunan fonksiyondur.
+            await Clients.OthersInGroup(groupName).SendAsync("receiveMessage", message);
+            #endregion
+            
+            #endregion
+        }
+
+        //Tüm clientlar bağlantıyı sağladığı zaman her client kendisine ait connection id'yi kendi ekranında
+        //görebilsin istersek;
+
+        public override async Task OnConnectedAsync()
+        {
+            await Clients.Caller.SendAsync("getConnectionId", Context.ConnectionId);
+        }
+
+        public async Task addGroup(string connectionId, string groupName)
+        {
+            await Groups.AddToGroupAsync(connectionId, groupName);
+        }
+    }
+}
+
+ayrıca Startup.cs'de endpoint olarak bildirelim,
+            endpoints.MapHub<MessageHub>("/messagehub");
+				
+
+Client tarafında ise index.html'de;
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/messagehub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            //fade'i fonksiyon haline getirelim ki koddan tasarruf sağlansın.
+            function animation(){
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            }
+
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+
+                let connectionIds = $("#connectionIds").val().split(",");
+                let groups = $("#txtGroups").val().split(",");
+
+                // connection.invoke("SendMessageAsync", message, connectionIds).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+                connection.invoke("SendMessageAsync", message, groups[0]).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+            });
+
+            let _connectionId = "";
+            connection.on("getConnectionId", connectionId =>{
+                _connectionId = connectionId;
+                $("#connectionId").html(`Connection ID: ${connectionId}`)
+            })
+
+            $("#btnGrubaGir").click(() => {
+                let groupName = $("input[name=grup]:checked").val();
+                connection.invoke("addGroup", _connectionId, groupName).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            
+            })
+
+        });
+    </script>
+</head>
+<body>
+
+    <div style="background-color: black; color: white;" id="connectionId"></div>
+    <br>
+    <input type="radio" name="grup" value="A"> A
+    <input type="radio" name="grup" value="B"> B
+    <input type="radio" name="grup" value="C"> C
+    <button id="btnGrubaGir">Gruba Gir</button>
+    <br>
+    <input type="text" id="txtMessage" placeholder="Mesaj"> <br>
+    <input type="text" id="txtGroups" placeholder="Groups">
+
+    <br>
+    <textarea placeholder="Connection id" id="connectionIds" cols="30" rows="10"></textarea>
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+
+</body>
+</html>

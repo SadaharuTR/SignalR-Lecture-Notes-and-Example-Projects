@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script>
+    $(document).ready(() => {
+        var connection = new signalR.HubConnectionBuilder()
+        .withUrl("https://localhost:5003/messagehub")
+        .build()
+
+        connection.start();
+
+        connection.on("receiveMessage", message => {
+            $("div.inform").html(message)
+            $("div.inform").fadeIn(2000, () => {})
+            $("div.inform").fadeOut(2000, () => {})
+        })
+
+        $("button").click(() => {
+            let email = $("#txtEmail").val();
+            let message = $("#txtMessage").val();
+            $.post("https://localhost:5003/api/message", {
+                Email: email,
+                Message: message
+            }, () => {
+
+            })
+        })
+    })
+    </script>
+    
+
+</head>
+<body>
+    <div style="width:50%;">
+
+        <input type="email" id="txtEmail" placeholder="Email" style="padding: 6px 12px;background: rgb(31, 32, 35);
+        border: 1px solid rgb(60, 63, 68);border-radius: 4px;font-size: 13px; color: aliceblue;  height: 26px;
+        appearance: none;transition: border 0.15s ease 0s; width: 100%; margin: 2px;
+        "> <br>
+        <input type="text" id="txtMessage" placeholder="Mesaj" style="padding: 6px 12px;background: rgb(31, 32, 35);
+        border: 1px solid rgb(60, 63, 68);border-radius: 4px;font-size: 13px; color: aliceblue; height: 26px;
+        appearance: none;transition: border 0.15s ease 0s; width: 100%;  margin: 2px;
+        "> <br>
+        
+        <button class="button-32" role="button">Gönder</button>
+
+    </div>
+    <br>
+    <div class="inform" style="background-color: black; color: antiquewhite; display: none;">
+
+    </div>
+
+</body>
+</html>

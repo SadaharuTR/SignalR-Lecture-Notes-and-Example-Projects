@@ -1,0 +1,202 @@
+2 durum söz konusudur.
+
+İlk bağlantıda hata verilmesi ve bağlantının önceden sağlanıp sonradan kopması durumları.
+
+İkinci durumdan başlayalım.
+
+---
+
+withAutomaticReconnect Fonksiyonuyla Kopan Bağlantıyı Yeniden Denemek
+
+- build() fonksiyonundan önce kullanmaya dikkat edilmelidir.
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/myhub")
+            .withAutomaticReconnect()
+            .build();
+            connection.start();
+			
+ilk önce hemen bağlantı kopar kopmaz tekrar bağlantı talebinde bulunacaktır. (0. saniye)
+daha sonra 2 - 10 - 30 saniyelik 4 periyotta bağlantıyı tekrar kurmaya çalışır.
+Eğer bağlantı hiç sağlanmıyorsa pes edip reconnect etmeye çalışmayacaktır.
+
+Kendimiz de süreleri ayarlayabiliriz. ms cinsinden ayarlarız.
+
+        .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+
+1-1-2-3-5-10 saniyelik periyot ile dene.
+
+---
+
+İlk durum için yani bağlanmaya çalışıken en baştan bağlantıyı sağlayamazsak,
+bu tip bir durum için kendimiz fonksiyon yazmalıyız.
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/myhub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+                connection.invoke("SendMessageAsync", message).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            connection.on("receiveMessage", message => {
+                $("div").append(message + "<br>")
+  
+            });           
+        });
+    </script>
+</head>
+<body>
+    <input type="text" id="txtMessage">
+    <button id="btnGonder">Gönder</button>
+
+    <div></div>
+</body>
+</html>
+
+Server'ı ayağa kaldırmadan çalıştırdığımızda start() fonksiyonu 2 saniyede bir tekrar deneyecektir.
+
+Server'ı ayağa kaldırdığımızda bağlantı sağlanacak hata vermeyi bırakacaktır.
+
+Bağlantıyı tekrar kesersek artık sorumluluk withAutomaticReconnect() fonksiyonuna geçecektir.
+
+---
+
+Durum Fonksiyonları
+
+- Client ile Server arasındaki bağlantının gerçekleşme durumlarına göre fırlatılan 3 tane temek event vardır.
+
+onreconnecting(): Yeniden bağlanma girişimlerini başlatmadan önce tetiklenir.
+Bağlantı koptuğunda yeniden sağlayabilmek için yapılan talepten önce tetiklendiğinden eğer ki bu süreçte yapılması gereken işlemler varsa, temizlenmesi gereken cookie'ler, kullanıcı bilgilendirmeleri vs. varsa yeniden talep yapmadan önce onReconnecting() fonksiyonunda çalışırız.
+
+onreconnected(): Yeniden bağlantı gerçekleştiğinde tetiklenir. Örneğin burada kullanıcıya yeniden bağlantı sağlanmıştır bilgisi verilebilir.
+
+onclose(): Yeniden bağlantı girişlerinin sonuçsuz kaldığı durumlarda fırlatılır.
+
+İlgili fonksiyonlara connection üzerinden erişilecektir.
+
+index.html'de;
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- önce signalr sonra jquery eklenmelidir. -->
+    <script src="signalr.min.js"></script>
+    <script src="jquery.min.js"></script>
+
+    <!-- signalr ile ilgili js kodlarımızı aşağıda yazacağız. -->
+    <script>
+        $(document).ready(() =>{
+            const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:5001/myhub")
+            .withAutomaticReconnect([1000, 1000, 2000, 3000, 5000, 10000])
+            .build();
+
+            //Bağlantı hiç kurulmadığı durumlarda bu fonksiyon kullanılır.
+            async function start() {
+                try {
+                    await connection.start();
+                } catch (error) {
+                    setTimeout(() => start(), 2000)
+                }
+            }
+
+            start();
+            //connection.start(); artık ihtiyacımız kalmadı.
+            //---
+
+            const durum = $("#durum")
+            //error parametresi süreçte hata olursa döndürmesi içindir.
+            connection.onreconnecting(error => {
+                durum.css("background-color", "blue")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruluyor...")
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            });
+            //Client'lar ilgili hub'a bağlandığında client'ların birbirlerinden ayrılabilmesi için
+            //connectionId atanmaktadır. (ileride detaylı)
+            connection.onreconnected(connectionId => {
+                durum.css("background-color", "green")
+                durum.css("color", "white")
+                durum.html("Bağlantı kuruldu...")
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            });
+
+            connection.onclose(connectionId => {
+                durum.css("background-color", "red")
+                durum.css("color", "white")
+                durum.html("Bağlantı kurulamadı!")
+                durum.fadeIn(2000, () => {
+                    setTimeout(() => {
+                        durum.fadeOut(2000)
+                    }, 2000)
+                })
+            });
+
+            $("#btnGonder").click(() => {
+                let message = $("#txtMessage").val();
+                connection.invoke("SendMessageAsync", message).catch(error => console.log(`Mesaj gönderilirken hata oluştu. ${error}`));
+            });
+
+            //ile gelen mesajı burada yakalayabiliriz.
+            connection.on("receiveMessage", message => {
+                $("#mesajlar").append(message + "<br>")
+  
+            });
+            
+        });
+    </script>
+</head>
+<body>
+
+    <div id="durum" style="display: none;"></div>
+
+    <input type="text" id="txtMessage">
+    <button id="btnGonder">Gönder</button>
+
+    <div id="mesajlar"></div>
+</body>
+</html>
+
